@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto dashboard</title>
+    <script src="/networktables/networktables.js"></script>
+    <style>
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+        body {
+            width: calc(100% - 1rem);
+            padding: 0.5rem;
+            background-color: #252525;
+            color: aliceblue;
+            overflow-x: hidden;
+            font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
+        }
+        ::-webkit-scrollbar {
+            background-color: #363636;
+        }
+        ::-webkit-scrollbar-thumb {
+            background-color: #aaa;
+            border-radius: 100vw;
+        }
+        .autos {
+            --title-size: 1.75rem;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            width: 100%;
+        }
+        .auto {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            margin: 0.5rem;
+            padding: 0.5rem;
+            background-color: #363636;
+            border-radius: 0.5rem;
+        }
+        .auto.selected {
+            background-color: #2c492c;
+        }
+        .auto span {
+            font-size: var(--title-size);
+            margin-bottom: 0.75rem;
+            margin-left: 0.5rem;
+        }
+        .auto .buttons {
+            display: flex;
+            flex-direction: row;
+            justify-content: space-around;
+            padding: 0.5rem;
+        }
+        .auto button.displaystart {
+            background-color: #855585;
+        }
+        .auto button.displaystart:hover {
+            background-color: #9c649c;
+        }
+        .auto button.displaystart:active {
+            background-color: #b172b1;
+        }
+        .auto button.selectpath {
+            background-color: #497449;
+        }
+        .auto button.selectpath:hover {
+            background-color: #558a55;
+        }
+        .auto button.selectpath:active {
+            background-color: #63a063;
+        }
+
+        .auto .selectedText {
+            color: #7fcc7f;
+            font-size: calc(var(--title-size) * 0.6);
+            margin-left: 1rem;
+            display: none;
+        }
+        .auto.selected .selectedText {
+            display: inline;
+        }
+
+        .top {
+            display: flex;
+            flex-direction: row;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 2rem;
+        }
+        .top h1 {
+            font-size: 2rem;
+        }
+        .top .sideButton {
+            background-color: #49746d;
+            font-size: 1.5rem;
+            height: 3rem;
+            width: 20rem;
+        }
+        .top .sideButton:hover {
+            background-color: #49746d;
+        }
+        .top .sideButton:active {
+            background-color: #49746d;
+        }
+
+        .top .columns {
+            background-color: #746049;
+            color: white;
+            border: none;
+            outline: none;
+            border-radius: 5px;
+            padding: 0.5rem;
+            font-size: 1.5rem;
+            width: 13rem;
+        }
+        
+        button {
+            outline: none;
+            border: none;
+            border-radius: 5px;
+            color: white;
+            padding: 0.5rem;
+            width: 10rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="top">
+        <h1>Wave 2826 autos</h1>
+        <button class="sideButton" id="sideButton">Switch to red (only visual)</button>
+        <select class="columns" id="columns">
+            <option value="1">1 column</option>
+            <option value="2" selected>2 columns</option>
+            <option value="3">3 columns</option>
+            <option value="4">4 columns</option>
+        </select>
+        <div>
+            Robot state: <span id="robotstate"></span><br />
+            Dashboard connection state: <span id="connectstate"></span><br />
+            Robot address: <span id="robotAddress"></span><br />
+        </div>
+    </div>
+    <br />
+
+    <div id="autos" class="autos">
+
+    </div>
+    <script>
+        "use strict";
+
+        let renderFunctions = [];
+        let isBlue = true;
+
+        const selectedAutoPath = "/SmartDashboard/Auto Choices/selected";
+        let selectedAuto = "None";
+
+        document.addEventListener("DOMContentLoaded", () => {
+            // A function that will be called when the websocket connects/disconnects
+            NetworkTables.addWsConnectionListener(onNetworkTablesConnection, true);
+            // A function that will be called when the robot connects/disconnects
+            NetworkTables.addRobotConnectionListener(onRobotConnection, true);
+            // A function that will be called when any NetworkTables key/value changes
+            NetworkTables.addKeyListener("/2826AutoDashboard/AutoData", autoDataChanged);
+            NetworkTables.addKeyListener(selectedAutoPath, selectedAutoChanged);
+
+            const sideButton = document.getElementById("sideButton");
+            sideButton.addEventListener("click", () => {
+                isBlue = !isBlue;
+                sideButton.textContent = isBlue ? "Switch to red (only visual)" : "Switch to blue (only visual)";
+                renderFunctions.forEach(f => f());
+            });
+
+            const columns = document.getElementById("columns");
+            const autos = document.getElementById("autos");
+            columns.addEventListener("change", () => {
+                const columnNumber = parseInt(columns.value);
+                autos.style.gridTemplateColumns = "1fr ".repeat(columnNumber);
+                autos.style.setProperty("--title-size", `${2.734 * (0.8 ** columnNumber)}rem`);
+            });
+        });
+
+
+        function onRobotConnection(connected) {
+            document.getElementById('robotstate').textContent = connected ? "Connected!" : "Disconnected";
+            document.getElementById('robotAddress').textContent = connected ? NetworkTables.getRobotAddress() : "Unknown";
+        }
+
+        function onNetworkTablesConnection(connected) {
+            if(connected) {
+                document.getElementById("connectstate").textContent = "Connected!";
+            } else {
+                document.getElementById("connectstate").textContent = "Disconnected!";
+            }
+        }
+
+        const fieldData = {
+            "game": "Crescendo",
+            "field-image": "2024-field.png",
+            "field-corners": {
+                "top-left": [
+                    150,
+                    79
+                ],
+                "bottom-right": [
+                    2961,
+                    1476
+                ]
+            },
+            "field-size": [
+                54.27083,
+                26.9375
+            ],
+            "field-unit": "foot"
+        };
+
+        function updateSelected() {
+            document.querySelectorAll(".auto.selected").forEach(e => e.classList.remove("selected"));
+            document.querySelector(`.auto[autoName='${selectedAuto}']`)?.classList?.add("selected");
+        }
+
+        function selectedAutoChanged(key, value, isNew) {
+            selectedAuto = value;
+            updateSelected();
+        }
+
+        function autoDataChanged(key, value, isNew) {
+            try {
+                const data = JSON.parse(value);
+                const autoChoices = data.autoChoices;
+                
+                const fieldImage = new Image();
+                fieldImage.onload = () => {
+                    const canvasWidth = 1920;
+                    const canvasHeight = Math.floor(canvasWidth * (fieldImage.height / fieldImage.width));
+
+                    const fieldTopPixels = fieldData["field-corners"]["top-left"][1] / fieldImage.height * canvasHeight;
+                    const fieldBottomPixels = fieldData["field-corners"]["bottom-right"][1] / fieldImage.height * canvasHeight;
+                    const fieldLeftPixels = fieldData["field-corners"]["top-left"][0] / fieldImage.width * canvasWidth;
+                    const fieldRightPixels = fieldData["field-corners"]["bottom-right"][0] / fieldImage.width * canvasWidth;
+                    const fieldHeightRatio = (fieldBottomPixels - fieldTopPixels) / canvasHeight;
+                    const fieldWidthRatio = (fieldRightPixels - fieldLeftPixels) / canvasWidth;
+
+                    const robotWidthMeters = 0.6604; // Side to side
+                    const robotLengthMeters = 0.6604; // Front to back
+
+                    const autosElement = document.getElementById("autos");
+                    autosElement.innerHTML = "";
+                    renderFunctions = [];
+                    for(const autoChoice of autoChoices) {
+                        const auto = document.createElement("div");
+                        auto.classList.add("auto");
+
+                        auto.setAttribute("autoName", autoChoice.name);
+
+                        const autoName = document.createElement("span");
+                        autoName.innerText = autoChoice.name;
+
+                        const selectedText = document.createElement("span");
+                        selectedText.innerText = "(Selected)";
+                        selectedText.classList.add("selectedText");
+                        autoName.appendChild(selectedText);
+
+                        const autoCanvas = document.createElement("canvas");
+                        const autoCtx = autoCanvas.getContext("2d");
+
+                        autoCanvas.width = canvasWidth;
+                        autoCanvas.height = canvasHeight;
+                        autoCtx.width = canvasWidth;
+                        autoCtx.height = canvasHeight;
+
+                        auto.appendChild(autoName);
+                        auto.appendChild(autoCanvas);
+
+                        const feetToMeters = 0.3048;
+                        const fieldWidth = fieldData["field-size"][0] * feetToMeters;
+                        const fieldHeight = fieldData["field-size"][1] * feetToMeters;
+                        
+                        const fieldPosToPixelPos = (pos) => {
+                            const x = (pos.x / fieldWidth * autoCanvas.width) * fieldWidthRatio + fieldLeftPixels;
+                            return {
+                                x: isBlue ? x : (autoCanvas.width * fieldWidthRatio) - (x - fieldLeftPixels) + fieldLeftPixels,
+                                y: (autoCanvas.height - pos.y / fieldHeight * autoCanvas.height) * fieldHeightRatio + fieldTopPixels
+                            };
+                        };
+
+                        let showingStart = true;
+                        function render() {
+                            autoCtx.clearRect(0, 0, canvasWidth, canvasHeight);
+                            
+                            autoCtx.drawImage(fieldImage, 0, 0, autoCtx.width, autoCtx.height);
+
+                            autoCtx.strokeStyle = "#aaaa55";
+                            autoCtx.lineCap = "round";
+                            autoCtx.lineJoin = "round";
+                            autoCtx.lineWidth = 15;
+                            autoCtx.beginPath();
+
+                            for(let i = 0; i < autoChoice.poses.length; i++) {
+                                const pathPoint = autoChoice.poses[i];
+                                const pos = fieldPosToPixelPos({ x: pathPoint.x, y: pathPoint.y });
+
+                                if(i === 0) autoCtx.moveTo(pos.x, pos.y);
+                                else autoCtx.lineTo(pos.x, pos.y);
+                            }
+                            autoCtx.stroke();
+
+                            if(showingStart) {
+                                autoCtx.strokeStyle = "#bb5555";
+                                const lineWidth = 15;
+                                autoCtx.lineWidth = lineWidth;
+                                autoCtx.beginPath();
+                                const center = autoChoice.poses[0];
+                                const rotation = -autoChoice.poses[0].rot; // Radians
+                                function rotate(cx, cy, x, y, angle) {
+                                    const cos = Math.cos(angle);
+                                    const sin = Math.sin(angle);
+                                    const nx = (cos * (x - cx)) + (sin * (y - cy)) + cx;
+                                    const ny = (cos * (y - cy)) - (sin * (x - cx)) + cy;
+                                    return [nx, ny];
+                                }
+                                const rotatePoint = (center, rotation, reference) => {
+                                    const point = rotate(center.x, center.y, reference.x + center.x, reference.y + center.y, rotation);
+                                    return {
+                                        x: point[0],
+                                        y: point[1]
+                                    };
+                                };
+                                const lineWidthMeters = lineWidth / autoCanvas.width * fieldWidth;
+                                const length = robotLengthMeters / 2 - lineWidthMeters / 2;
+                                const width = robotWidthMeters / 2 - lineWidthMeters / 2;
+                                const points = [
+                                    fieldPosToPixelPos(rotatePoint(center, rotation, { x: length, y: width })),
+                                    fieldPosToPixelPos(rotatePoint(center, rotation, { x: length, y: -width })),
+                                    fieldPosToPixelPos(rotatePoint(center, rotation, { x: -length, y: -width })),
+                                    fieldPosToPixelPos(rotatePoint(center, rotation, { x: -length, y: width }))
+                                ];
+                                autoCtx.moveTo(points[0].x, points[0].y);
+                                for(let i = 0; i < points.length; i++) {
+                                    autoCtx.lineTo(points[i].x, points[i].y);
+                                }
+                                autoCtx.lineTo(points[0].x, points[0].y);
+                                autoCtx.stroke();
+                            }
+                        }
+                        renderFunctions.push(render);
+
+                        render();
+
+                        const buttons = document.createElement("div");
+                        buttons.classList.add("buttons");
+
+                        const displayStartButton = document.createElement("button");
+                        const selectPathButton = document.createElement("button");
+
+                        displayStartButton.textContent = showingStart ? "Hide start" : "Display start";
+                        selectPathButton.textContent = "Select path";
+                        displayStartButton.classList.add("displaystart");
+                        selectPathButton.classList.add("selectpath");
+
+                        displayStartButton.onclick = () => {
+                            showingStart = !showingStart;
+                            displayStartButton.textContent = showingStart ? "Hide start" : "Display start";
+                            render();
+                        };
+                        selectPathButton.onclick = () => {
+                            NetworkTables.putValue(selectedAutoPath, autoChoice.name);
+                        };
+
+                        buttons.appendChild(displayStartButton);
+                        buttons.appendChild(selectPathButton);
+
+                        auto.appendChild(buttons);
+
+                        autosElement.appendChild(auto);
+                    }
+                    
+                    updateSelected();
+                };
+                fieldImage.src = fieldData["field-image"];
+            } catch(e) {
+                console.error(e);
+            }
+        }
+    </script>
+</body>
+</html>
